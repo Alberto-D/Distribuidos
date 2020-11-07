@@ -7,7 +7,9 @@
 int main () {
 
   set_name("P1");
-  set_ip_port("0.0.0.0",8000);
+  set_ip_port("127.0.0.1",8000);
+  //Para usar maquinas distintas hay que poner la direccion inet del server 
+  
   init_connection_client();
 
   // Esta función debe crear un thread the recepción de mensajes y volver

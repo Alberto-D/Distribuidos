@@ -7,7 +7,9 @@ int main () {
   int clients[2];
 
   set_name("P2");
-  set_ip_port("0.0.0.0",8000);
+  set_ip_port("127.0.0.1",8000);
+    //Para usar maquinas distintas hay que poner la direccion inet del server 
+
   init_connection_server();
 
   // Llamada bloqueante que espera por nuevas conexiones (2 clientes)

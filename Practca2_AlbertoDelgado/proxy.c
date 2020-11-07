@@ -9,36 +9,38 @@
 
 #define MAXI 1024
 #define MAX_CLIENTS 2
+#define MAX_CHAR 20
 
-struct message Menji;
+// Creo un mensaje para usar el relog de lanport y tener un mensaje base.
+struct message Mensaje;
+// Creo el socket, la i que usaré como indice en el array new_socket (done estan los accept de los clientes),tambien el thread para usarlo.
 int sockfd=0, i=0;
 int new_socket[MAX_CLIENTS];
 struct sockaddr_in address;
-int addrlen = sizeof(address);
 pthread_t thread;
 
-char first[20];
-char second[20];
+char first[MAX_CHAR];
+char second[MAX_CHAR];
 
-
-
-
+//El thread del cliente recive un mansaje, si no el SHUTDOWN_NOW doy error y vuelvo.
 void *thread_reception(void *unused){
   struct message recivido;
-
   recv(sockfd, &recivido, sizeof(recivido), 0);
-	printf("Recivido en tread: %s,%d,%d\n", recivido.origin,recivido.action,recivido.clock_lamport);
-  Menji.clock_lamport = MAX(recivido.clock_lamport, Menji.clock_lamport)+1;
+  if( recivido.action != SHUTDOWN_NOW){
+    fprintf(stderr,"SHUTDOWN_NOW expected but recived other message \n");
+    return 0;
+  }
+    Mensaje.clock_lamport = MAX(recivido.clock_lamport, Mensaje.clock_lamport)+1;
+  return 0;
 }
 
 
 // *** Funciones comunes ***
 void set_name (char name[2]) {
-  
-  memset(Menji.origin, 0, sizeof(Menji.origin)); 
-  strcpy(Menji.origin, name);
-  Menji.clock_lamport = 0;
-  printf("El nombre de setname es %s \n",Menji.origin);
+
+  memset(Mensaje.origin, 0, sizeof(Mensaje.origin)); 
+  strcpy(Mensaje.origin, name);
+  Mensaje.clock_lamport = 0;
 }
 
 void set_ip_port (char* ip, unsigned int port) {
@@ -59,25 +61,27 @@ void set_ip_port (char* ip, unsigned int port) {
 
 
 int get_clock_lamport(){
-  return Menji.clock_lamport;  
+
+  return Mensaje.clock_lamport;  
 }
 
 int close_connection() {
+//Uno los thread (si lo hace el servidor, el join da error pero no afecta al programa) y cierro el socket.
   pthread_join(thread,NULL);
   close(sockfd);
-
   return 0;
 }
 
 
 // *** Funciones para el cliente (P1,P3) ***
 void init_recv_thread () {
+//Inicio el hilo que va a estar escuchando..
   pthread_create(&thread, NULL, thread_reception, NULL);
-
 }
 
 
 int init_connection_client() {
+
   if((connect(sockfd, (struct sockaddr*)&address, sizeof(address)))< 0)
 	{
 		perror("conection failed");
@@ -85,25 +89,20 @@ int init_connection_client() {
     printf("Conection created\n");
   }
   return 0; 
-   
 }
 
 void notify_ready_shutdown() {
-  Menji.action = READY_TO_SHUTDOWN;
-  Menji.clock_lamport++;
-  printf(" El mensaje en notify ready es de %s, lleva %d, y el clock es %d\n", Menji.origin, Menji.action, Menji.clock_lamport);
 
-  send(sockfd,&Menji, sizeof(Menji), 0);
-    
+  Mensaje.action = READY_TO_SHUTDOWN;
+  Mensaje.clock_lamport++;
+  send(sockfd,&Mensaje, sizeof(Mensaje), 0);
 }
-
 
 void notify_shutdown_ack() {
 
-  Menji.action = SHUTDOWN_ACK;
-  printf(" El mensaje en ack es de %s, lleva %d, y el clock es %d\n", Menji.origin, Menji.action, Menji.clock_lamport);
-   Menji.clock_lamport++;//poner el MAX 
-  send(sockfd, &Menji, sizeof(Menji), 0); 
+  Mensaje.action = SHUTDOWN_ACK;
+   Mensaje.clock_lamport++;//poner el MAX 
+  send(sockfd, &Mensaje, sizeof(Mensaje), 0); 
 }
 
 // *** Funciones para el servidor (P2) ***
@@ -124,18 +123,22 @@ int init_connection_server() {
 }
 
 int wait_shutdown_notication() {
+
   struct message recivido;
+  int addrlen = sizeof(address);
+
   if ((new_socket[i] = accept(sockfd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0)
 	{
 		perror("accept");
 		exit(EXIT_FAILURE);
 	}
 	recv(new_socket[i], &recivido, sizeof(recivido), 0);
-	printf("En wait %s,%d,%d\n", recivido.origin,recivido.action,recivido.clock_lamport);
-  Menji.clock_lamport = MAX(Menji.clock_lamport, recivido.clock_lamport)+1;
-	
-  //send(new_socket[i], "perfe\n", 40, 0);
-  if(i==0){
+  if( recivido.action != READY_TO_SHUTDOWN){
+    fprintf(stderr,"READY_TO_SHUTDOWN expected but recived other message \n");
+    return 1;
+  }
+  Mensaje.clock_lamport = MAX(Mensaje.clock_lamport, recivido.clock_lamport)+1;
+	  if(i==0){
     strcpy(first,recivido.origin);
   }else{
     strcpy(second,recivido.origin);
@@ -145,26 +148,26 @@ int wait_shutdown_notication() {
 }
 
 int shutdown_now(char clientid[2]) {
+
   struct message enviar;
   strcpy(enviar.origin, clientid);
   enviar.action = SHUTDOWN_NOW;
-  enviar.clock_lamport = Menji.clock_lamport+1;
+  enviar.clock_lamport = Mensaje.clock_lamport+1;
   int number;
   if(strcmp (clientid, first)==0){
-    printf("Son el mismo priemro weeeeee\n");
     number = 0;
   }else if( strcmp (clientid, second)==0){
     number = 1;
-    printf("Son el mismo SEGUNDO weeeeee\n");
   }
-  printf(" El mensaje en now es de %s, lleva %d, y el clock es %d\n", enviar.origin, enviar.action, enviar.clock_lamport);
   send(new_socket[number],&enviar, sizeof(enviar), 0);//Tengo que ver como eliegir por cualmandarlo
   struct message recivido;
 
   recv(new_socket[number], &recivido, sizeof(recivido), 0);
-  Menji.clock_lamport = MAX(Menji.clock_lamport, recivido.clock_lamport)+1;
-
-
+  if( recivido.action != SHUTDOWN_ACK){
+    fprintf(stderr,"SHUTDOWN_ACK expected but recived other message \n");
+    return 1;
+  }
+  Mensaje.clock_lamport = MAX(Mensaje.clock_lamport, recivido.clock_lamport)+1;
   return 0;
 }
 
