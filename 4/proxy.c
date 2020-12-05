@@ -78,6 +78,10 @@ int open_file(char * strFileName){
 int close_file(int fd){
 	close(fd);
 }
+int close_connection(){
+	pthread_join(thread,NULL);
+}
+
 
 
 //Client functions---------------------------------------------------------------------
@@ -109,6 +113,8 @@ void init_recv_thread () {
   pthread_create(&thread, NULL, thread_reception, NULL);
 }
 
+int last_ack=0;
+
 void *thread_reception(void *unused){
 	struct chunk_ack chunk;
 	int addrlen = sizeof(address);
@@ -117,9 +123,16 @@ void *thread_reception(void *unused){
 		int eso =recvfrom(sockfd, &chunk, sizeof(chunk), 0,(struct sockaddr *)&address,&addrlen);
 		if(eso>0){
 			estado=Recivido;
+			printf("Ack %d recived form %s\n",chunk.chunk_id,chunk.username );
+			if(chunk.chunk_id-last_ack <512){
+				//Si el anterior ack - el nuevo ack es menor que 512 significa que se han asentido menos de 512 bytes de datos con lo cual es el ulmo trozo del mensaje.
+				printf("AAAAAAAAAAAAAAA " );
+				break;
+			}
 		}
+			
+		last_ack= chunk.chunk_id;
 	}
-	
   	return 0;
 }
 
@@ -146,11 +159,11 @@ int write_block(int fdin, char * strData, int byteOffset, int blockSize){
 				exit(EXIT_FAILURE);
 			}
 			estado=Esperando;
-			printf("En el bloque: NOmbre: %s, chunkid: %d, datasixe: %d, data: %s\n",tosend.username,tosend.chunk_id,tosend.data_size,tosend.data);
+			//printf("En el bloque: NOmbre: %s, chunkid: %d, datasixe: %d, data: %s\n",tosend.username,tosend.chunk_id,tosend.data_size,tosend.data);
 			return 0;
 		}else if (estado==Esperando){
 			//Si el estado es esperando, no he recivido el ack, imprimo
-			printf("a");
+			//printf("a");
 			sleep(0.5);
 		}
 
@@ -161,7 +174,7 @@ int write_block(int fdin, char * strData, int byteOffset, int blockSize){
 		time_taken += (t2.tv_usec - t1.tv_usec) / 1000.0;
 		time_taken = time_taken/1000;		
 	}
-	printf("\nSE ACABO\n");
+	printf("\nWaiting time execed, conection closed\n");
 	exit(EXIT_FAILURE);	
 }
 
@@ -195,20 +208,20 @@ int wait_client(char *names[], int number_of_names){
 			perror("mkdir failed");
 			exit(EXIT_FAILURE);	
 		}
-		// memset(ack.username, 0, MAX_SIZE);
-		 strcpy(ack.username, recivido.username);
+		strcpy(ack.username, recivido.username);
 		ack.chunk_id = recivido.chunk_id;
 		
-			if(sendto(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&address,addrlen)<0){
-				perror("Failed sendto");
-				exit(EXIT_FAILURE);
-			}
+		if(sendto(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&address,addrlen)<0){
+			perror("Failed sendto");
+			exit(EXIT_FAILURE);
+		}
+
 		time_t t = time(NULL);
 		struct tm tm = *localtime(&t);
 		char filename[MAXI];
 		sprintf(filename,"%s/%d-%02d-%02d %02d:%02d:%02d\n",recivido.username, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 
-		printf(" %s\n--------------------\n",recivido.data);
+		//printf(" %s\n--------------------\n",recivido.data);
 		if((fptr = fopen(filename,"w")) == NULL){
 			printf("Error!");   
 			exit(1);             
@@ -219,28 +232,38 @@ int wait_client(char *names[], int number_of_names){
 		}
 		
 		while (eso>0){
+			
 			memset(recivido.data, 0, MAX_SIZE);
 			eso = recvfrom(sockfd, &recivido, sizeof(recivido), 0,(struct sockaddr*)&address,&addrlen);
 			if(fprintf(fptr,"%s",recivido.data)<0){
 				printf("Writing error\n");
 			}
-			//sleep(6);
 			
-			printf(" %s\n--------------------\n",recivido.data);				
+
+			
+			//printf(" %s\n--------------------\n",recivido.data);				
 			strcpy(ack.username, recivido.username);
 			ack.chunk_id = recivido.chunk_id;
+			printf("Ack %d sended to %s\n",ack.chunk_id,ack.username );
 			if(sendto(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&address,addrlen)<0){
 				perror("Failed sendto");
 				exit(EXIT_FAILURE);
 			}
-			if(recivido.data_size<510){
+			if(recivido.data_size<512){		
+				printf("Se acabo");
 				break;
 			}
 
 		}
 	}else{
-		fprintf(stderr,"User unknown \n");
-		exit(EXIT_FAILURE);	
+		//Si el cliente es desconocido le mando un mensaje con el chunkID=-1 para indicarlo.
+		fprintf(stderr,"%s :User unknown \n",recivido.username );
+		strcpy(ack.username, recivido.username);
+		ack.chunk_id = -1;
+		if(sendto(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&address,addrlen)<0){
+			perror("Failed sendto");
+			exit(EXIT_FAILURE);
+		}
  	  	return 1;
   	}
 	fclose(fptr);

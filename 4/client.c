@@ -35,6 +35,7 @@ int main(int argc, char const *argv[]){
 	int read_status;
 	int done;
 	done = 0;	
+	int offset=0;
 	while(!done){
 		read_status = read(fichero, buff, MAX_SIZE);
 		if(read_status < 0){
@@ -45,14 +46,16 @@ int main(int argc, char const *argv[]){
 			break;
 		}
 		//printf("\n---------------------------------\n");
+		offset= offset+read_status;//el offset es el ultimo byte que envio, con lo cual voy sumando los bytes que leo
 		
-		write_block(fichero, buff, 0, read_status);
+		write_block(fichero, buff, offset, read_status);
 	 	
 
 		memset(buff, 0, MAX_SIZE);
 	}
 	
-	
+	close_connection();
+
 
 
 
