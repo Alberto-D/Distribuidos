@@ -16,7 +16,7 @@ struct send_chunk{
 };
 
 struct chunk_ack{
-   char* username;
+   char username[MAX_SIZE];
    int chunk_id;
 };
 

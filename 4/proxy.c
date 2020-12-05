@@ -13,12 +13,19 @@
 #include  <unistd.h>
 #include <fcntl.h>
 #include <err.h>
+#include <sys/stat.h>
+#include <errno.h>
+#include <sys/time.h>
+
 
 #define PORT 8128
 #define MAXI 1024
 #define MAX_CLIENTS 100
 #define MAX_CHAR 20
 #define MAX_SIZE 512
+#define Recivido 1
+#define Esperando 2
+
 
 int sockfd =0;
 int new_socket=0;
@@ -27,6 +34,7 @@ pthread_t thread;
 
 char name[MAXI];
 
+int estado=Recivido;
 //Common functions---------------------------------------------------------------------
 void usage(void){
 	fprintf(stderr, "./client --username #name --path #path\nServer : ./server --priority writer/reader\n");
@@ -40,11 +48,11 @@ void set_username (char* username){
 
 }
 
-
+ 
 
 void set_ip_port (char* ip, unsigned int port) {
 
-	if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) == -1){
+	if ((sockfd = socket(AF_INET, SOCK_DGRAM, 0)) == -1){
     	perror("socket failed");
     	exit(EXIT_FAILURE);
   	}else{
@@ -65,13 +73,10 @@ int open_file(char * strFileName){
 		err(1, "can't open input file");
 	}
 	return fdin;
-
-
 }
 
 int close_file(int fd){
 	close(fd);
-
 }
 
 
@@ -86,13 +91,11 @@ void check_arguments_client(int argc, char const *argv[]){
 	}else if( access( argv[4], F_OK ) == -1 ){
 		usage();
 	}
-	
 	return;
 }
 
 
 int init_connection_client() {
-
 	if((connect(sockfd, (struct sockaddr*)&address, sizeof(address)))< 0){
 		perror("conection failed");
 	}else{
@@ -108,98 +111,148 @@ void init_recv_thread () {
 
 void *thread_reception(void *unused){
 	struct chunk_ack chunk;
- 	recv(sockfd, &chunk, sizeof(chunk), 0);
+	int addrlen = sizeof(address);
+	//siempre estoy reciviendo cosas, si me llega algo pongo el estado a recivido 
+	while(1){
+		int eso =recvfrom(sockfd, &chunk, sizeof(chunk), 0,(struct sockaddr *)&address,&addrlen);
+		if(eso>0){
+			estado=Recivido;
+		}
+	}
+	
   	return 0;
 }
 
 int write_block(int fdin, char * strData, int byteOffset, int blockSize){
-	struct send_chunk tosend;
-	memset(tosend.data, 0, MAX_SIZE);
-	strcpy(tosend.username, name);
-	tosend.chunk_id=byteOffset;
-	tosend.data_size=blockSize;
-	printf("\n---------------------------------\n");
-	strcpy(tosend.data, strData);
-	send(sockfd, &tosend, sizeof(tosend), 0);
-	printf("En el bloque: NOmbre: %s, chunkid: %d, datasixe: %d, data: %s\n",tosend.username,tosend.chunk_id,tosend.data_size,tosend.data);
-	// char buff[MAX_SIZE];
-	// int read_status;
-	// int done;
-	// done = 0;	
-	// while(!done){
-	// 	read_status = read(fdin, tosend.data, MAX_SIZE);
-	// 	if(read_status < 0){
-	// 		printf("can't read");
-	// 		return -1;
-	// 	}else if(read_status == 0){
-	// 		done = 1;
-	// 		break;
-	// 	}
-	// 	printf("%s",tosend.data);
-	//  	printf("\n---------------------------------\n");
-	// 	//strcpy(tosend.data, buff);
-	// 	send(sockfd, &tosend, sizeof(tosend), 0);
-	// 	memset(tosend.data, 0, MAX_SIZE);
-	// }
-	return 0;
+	struct timeval t1, t2;
+	long double time_taken = 0.0;
+	if (gettimeofday(&t1, NULL)!= 0){
+		perror("Error in get time of the day");
+	}
+	while(time_taken < 5){
+		if(estado==Recivido){
+			//Si el estado es recivido, significa que he recivodo el ack con lo cual mando otro
+			struct send_chunk tosend;
+			int addrlen = sizeof(address);
 
+			memset(tosend.data, 0, MAX_SIZE);
+			strcpy(tosend.username, name);
+			tosend.chunk_id=byteOffset;
+			tosend.data_size=blockSize;
+			//printf("\n---------------------------------\n");
+			strncpy(tosend.data, strData,blockSize);
+			if(sendto(sockfd, &tosend, sizeof(tosend), 0,(struct sockaddr *)&address,addrlen)<0){
+				perror("Failed sendto");
+				exit(EXIT_FAILURE);
+			}
+			estado=Esperando;
+			printf("En el bloque: NOmbre: %s, chunkid: %d, datasixe: %d, data: %s\n",tosend.username,tosend.chunk_id,tosend.data_size,tosend.data);
+			return 0;
+		}else if (estado==Esperando){
+			//Si el estado es esperando, no he recivido el ack, imprimo
+			printf("a");
+			sleep(0.5);
+		}
+
+		if (gettimeofday(&t2, NULL)!= 0){
+			perror("Error in get time of the day");
+		}
+		time_taken = (t2.tv_sec - t1.tv_sec)*1000;
+		time_taken += (t2.tv_usec - t1.tv_usec) / 1000.0;
+		time_taken = time_taken/1000;		
+	}
+	printf("\nSE ACABO\n");
+	exit(EXIT_FAILURE);	
 }
 
 
 //Server functions---------------------------------------------------------------------
 
 int init_connection_server() {
-
-   if (bind(sockfd, (struct sockaddr *)&address, sizeof(address))<0)
-    {
+   if (bind(sockfd, (struct sockaddr *)&address, sizeof(address))<0){
         perror("bind failed");
         exit(EXIT_FAILURE);
-    }
-
-	if (listen(sockfd, 1) < 0)
-	{
-		perror("listen");
-		exit(EXIT_FAILURE);
+    }else{
+	 	printf("Conection created\n");
 	}
   return 0; 
 }
 
 
 int wait_client(char *names[], int number_of_names){
-
+	FILE *fptr;
  	struct send_chunk recivido;
   	int addrlen = sizeof(address);
-
-  	if ((new_socket = accept(sockfd, (struct sockaddr *)&address, (socklen_t*)&addrlen))<0){
-		perror("accept");
-		exit(EXIT_FAILURE);
+	struct chunk_ack ack;
+  	
+	int eso =recvfrom(sockfd, &recivido, sizeof(recivido), 0,(struct sockaddr *)&address,&addrlen);
+	if(eso<0){
+		perror("recvfrom failed");
+        exit(EXIT_FAILURE);	
 	}
-	
-	recv(new_socket, &recivido, sizeof(recivido), 0);
-	printf("En el bloque: NOmbre: %s, chunkid: %d, datasixe: %d, data: %s\n",recivido.username,recivido.chunk_id,recivido.data_size,recivido.data);
+  	if(is_registred(recivido.username, names, number_of_names)){
+		if((mkdir(recivido.username, 0700)<0)&&(errno !=EEXIST)){
+			perror("mkdir failed");
+			exit(EXIT_FAILURE);	
+		}
+		// memset(ack.username, 0, MAX_SIZE);
+		 strcpy(ack.username, recivido.username);
+		ack.chunk_id = recivido.chunk_id;
+		
+			if(sendto(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&address,addrlen)<0){
+				perror("Failed sendto");
+				exit(EXIT_FAILURE);
+			}
+		time_t t = time(NULL);
+		struct tm tm = *localtime(&t);
+		char filename[MAXI];
+		sprintf(filename,"%s/%d-%02d-%02d %02d:%02d:%02d\n",recivido.username, tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
 
+		printf(" %s\n--------------------\n",recivido.data);
+		if((fptr = fopen(filename,"w")) == NULL){
+			printf("Error!");   
+			exit(1);             
+		}
+		if(fprintf(fptr,"%s",recivido.data)<0){
+			printf("Error escrbiendo\n");
+			exit(EXIT_FAILURE);	
+		}
+		
+		while (eso>0){
+			memset(recivido.data, 0, MAX_SIZE);
+			eso = recvfrom(sockfd, &recivido, sizeof(recivido), 0,(struct sockaddr*)&address,&addrlen);
+			if(fprintf(fptr,"%s",recivido.data)<0){
+				printf("Writing error\n");
+			}
+			//sleep(6);
+			
+			printf(" %s\n--------------------\n",recivido.data);				
+			strcpy(ack.username, recivido.username);
+			ack.chunk_id = recivido.chunk_id;
+			if(sendto(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&address,addrlen)<0){
+				perror("Failed sendto");
+				exit(EXIT_FAILURE);
+			}
+			if(recivido.data_size<510){
+				break;
+			}
 
-  	if(is_registred(recivido.username, names, number_of_names)!=0){
-  	  fprintf(stderr,"User unknown \n");
- 	  return 1;
+		}
+	}else{
+		fprintf(stderr,"User unknown \n");
+		exit(EXIT_FAILURE);	
+ 	  	return 1;
   	}
-	  int eso =1;
-	  while (eso>0){
-		  	memset(recivido.data, 0, MAX_SIZE);
-
-		eso = recv(new_socket, &recivido, sizeof(recivido), 0);
-		printf("En el bloque: NOmbre: %s, chunkid: %d, datasixe: %d, data: %s\n",recivido.username,recivido.chunk_id,recivido.data_size,recivido.data);
-
-	  }
+	fclose(fptr);
   	return 0;   
 }
 
 int is_registred(char username[],char *strs[], int size){
-	int exit=1;
+	int exit=0;
 	for(int i =0;i< size ;i++){
 		//printf("Comparo %s y %s en %d\n",strs[i], username, strlen(strs[i]));
-		if(strncmp(strs[i], username,strlen(strs[i]))==0){
-			exit=0;
+		if(strncmp(strs[i], username,strlen(username))==0){
+			exit=1;
 		}
 	}
 	return exit;

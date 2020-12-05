@@ -8,7 +8,7 @@
 #include "proxy.h"
 #define PORT 8080
 #define MAXI 256
-#define MAX_SIZE 511
+#define MAX_SIZE 512
 
 
 
@@ -29,9 +29,9 @@ int main(int argc, char const *argv[]){
 	int fichero =  open_file(argv[4]);
 
 	//write_block(fichero, "Hola k tal", 2, 3);
-	//init_recv_thread();
+	init_recv_thread();
 
-	char buff[MAX_SIZE];
+	char buff[MAX_SIZE+1];
 	int read_status;
 	int done;
 	done = 0;	
@@ -44,9 +44,10 @@ int main(int argc, char const *argv[]){
 			done = 1;
 			break;
 		}
-		write_block(fichero, buff, 0, read_status);
-	 	printf("\n---------------------------------\n");
+		//printf("\n---------------------------------\n");
 		
+		write_block(fichero, buff, 0, read_status);
+	 	
 
 		memset(buff, 0, MAX_SIZE);
 	}
