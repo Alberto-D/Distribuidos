@@ -24,6 +24,9 @@ struct response{
 
 
 
+struct name{
+   char name[512]; // 100 character array
+};
 
 
 void usage(void);

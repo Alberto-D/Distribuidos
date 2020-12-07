@@ -19,6 +19,13 @@ struct chunk_ack{
    char username[MAX_SIZE];
    int chunk_id;
 };
+struct client{
+   char username[MAX_SIZE];
+   int user_id;
+   int created;
+   int is_first;
+   int number;
+};
 
 void usage(void);
 
