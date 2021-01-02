@@ -18,27 +18,24 @@
 #include <sys/time.h>
 
 
-#define PORT 8128
-#define MAXI 1024
-#define MAX_CLIENTS 100
-#define MAX_CHAR 20
-#define MAX_SIZE 512
+int threadno=0;
 
 
 //Variables nedded for the socket connection
 int sockfd =0;
 int new_socket=0;
 struct sockaddr_in address;
-	int addrlen = sizeof(address);
+int addrlen = sizeof(address);
 
 //Trhead for the client
 pthread_t thread;
 //Two arrays of 100, one of threads and the ohter of adresses, so that the server sends each packet to the correct client
 struct sockaddr_in addresses[MAX_CLIENTS];
-pthread_t threads[MAX_CLIENTS];
+//pthread_t threads[MAX_CLIENTS];
+struct sockaddr_in clientaddr;
 
 //the name to set in setname()
-char name[MAXI];
+char name[MAX_USERNAME_SIZE];
 
 // An state to see if the machine is waiting fro a message, the last ack to check if it is the last message and a narray of sendchunks to use in the server
 struct message recividos[MAX_CLIENTS];
@@ -49,9 +46,8 @@ int number_of_names=5;
 pthread_mutex_t lock;
 
 int n =0;
-//The current date goes here, so that two files never have the same name.
-char date[MAXI];
 
+char gip[MAX_SIZE];
 
 
 //Common functions---------------------------------------------------------------------
@@ -73,10 +69,12 @@ void set_ip_port (char* ip, unsigned int port) {
 		printf("Socket created \n");
 	}
 
-	bzero(&address, sizeof(address));
-	address.sin_family = AF_INET;
-	address.sin_addr.s_addr = inet_addr(ip);
-    address.sin_port = htons( port );
+	bzero(&clientaddr, sizeof(clientaddr));
+	clientaddr.sin_family = AF_INET;
+	clientaddr.sin_addr.s_addr = inet_addr(ip);
+	strcpy(gip,ip );
+    clientaddr.sin_port = htons( port );
+	
 }
 
 int open_file(char * strFileName){
@@ -93,30 +91,36 @@ int close_file(int fd){
 }
 int close_connection(){
 	pthread_join(thread,NULL);
-	//close(sockfd);
+	close(sockfd);
 
 }
 
 
 //Funciones para ambos------------------------------
 
-//Manda un primer mensaje con si es escritor o lector para empexzar la comunicacacion y espera un ack
+//Manda un primer mensaje con si es escritor o lector para empezar la comunicacacion y espera un ack
 //Si llega un cormiado la conexcion está bien y se puede seguir, si no, devuelvo errro
 int start_conection(struct message first){
-	if(sendto(sockfd, &first, sizeof(first), 0,(struct sockaddr *)&address,addrlen)<0){
-		perror("Failed sendto");
-		exit(EXIT_FAILURE);
-	}
-	struct message ack;
-	if(recvfrom(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&address,&addrlen)<0){
-		perror("Failed sendto");
-		exit(EXIT_FAILURE);
-	}
+	printf("\n\t Servidor escuchando en el puerto %u ip %s \n",clientaddr.sin_port,inet_ntoa(clientaddr.sin_addr) );
 
-	if(ack.action==CONFIRM){
-		printf("Confirmo el mensaje\n");
-		return 1;
+	if(sendto(sockfd, &first, sizeof(first), 0,(struct sockaddr *)&clientaddr,addrlen)<0){
+		perror("Failed sendto");
+		exit(EXIT_FAILURE);
 	}
+	
+	struct message ack;
+	if(recvfrom(sockfd, &ack, sizeof(ack), 0,(struct sockaddr *)&clientaddr,&addrlen)<0){
+		perror("Failed sendto");
+		exit(EXIT_FAILURE);
+	}
+	printf("El puerto es %d y en action %d  \n",ack.port, ack.action );
+	int puerto = ack.port;
+	if(ack.action==CHUNKACK){
+		printf("Confirmo el mensaje\n");
+		
+		return puerto;
+	}
+	
 	return -1;
 }
 
@@ -148,34 +152,33 @@ int send_chunk(int id, char textc[],enum actions action){
 
 //Reader functions---------------------------------------------------------------------
 int ask_for_chunk(char textc[],int id){
+		printf("\n\tIntento enviar al puerto %u ip %s \n",clientaddr.sin_port,inet_ntoa(clientaddr.sin_addr) );
+
 	//Pregunta por el chunk id y en textc se copia el texto.
 	struct get_chunk chunk_to_get;
 	chunk_to_get.action = GETCHUNK;
 	strcpy(chunk_to_get.username, name);
 	chunk_to_get.chunk_id=id;
 	//Envia un getchunk pregunatndo por elchunk con id id.
-	if(sendto(sockfd, &chunk_to_get, sizeof(chunk_to_get), 0,(struct sockaddr *)&address,addrlen)<0){
+	printf("MAndo un getchunk\n");
+	if(sendto(sockfd, &chunk_to_get, sizeof(chunk_to_get), 0,(struct sockaddr *)&clientaddr,addrlen)<0){
 		perror("Failed sendto");
 		exit(EXIT_FAILURE);
 	}
 	//Espera a recivir el chunk y copia el text
 	struct send_chunk recived_chunk;
-	if(recvfrom(sockfd, &recived_chunk, sizeof(recived_chunk), 0,(struct sockaddr *)&address,&addrlen)<0){
+	if(recvfrom(sockfd, &recived_chunk, sizeof(recived_chunk), 0,(struct sockaddr *)&clientaddr,&addrlen)<0){
 		perror("Failed sendto");
 		exit(EXIT_FAILURE);
 	}
 	strncpy(textc,recived_chunk.data,MAX_SIZE);
+	printf( "LLEga de %s con action %d \n ", recived_chunk.username, recived_chunk.action);
 	//Si me llega algo que no es un send chunk fallo, igual copmprobar tambien el nombre
 	if(recived_chunk.action != SENDCHUNK){
 		return 1;
 	}
 	//Envia el asenttimiento del chunk
-	struct chunk_ack asentimiento;
-	asentimiento.chunk_id=id;
-	if(sendto(sockfd, &asentimiento, sizeof(asentimiento), 0,(struct sockaddr *)&address,addrlen)<0){
-		perror("Failed sendto");
-		exit(EXIT_FAILURE);
-	}
+	
 	return 0;
 }
 
@@ -261,7 +264,7 @@ printf("	INICIO EL THREAD  %d, LECTOR\n",i);
 	}
 	//Tras esto, abro el archivo a leer 
 	
-	char filename[MAXI];
+	char filename[MAX_SIZE];
 	sprintf(filename,"%s.txt",recivido.username);
 	//Para que no sealicen lecturas ye scrituras a la vez se puede poner un lock a lo mejor? me parece extremo
 	int fdin = open_file(filename);
@@ -332,7 +335,8 @@ printf("	INICIO EL THREAD  %d, ESCRITOR\n",i);
 	if((fptr = open("temp.txt", O_WRONLY | O_CREAT, 0777))<0){
 				perror("Failed open");
 				exit(EXIT_FAILURE);            
-			}
+			}	printf("\n\t Servidor escuchando en el puerto %u ip %s \n",clientaddr.sin_port,inet_ntoa(clientaddr.sin_addr) );
+
 	//HAsta que no me llege un mensaje sync recivo y proceso mensajes, escribiendo los chunks en el archivo temporal.
 	while (1){
 		struct send_chunk recived;
@@ -378,53 +382,173 @@ printf("	INICIO EL THREAD  %d, ESCRITOR\n",i);
 
 
 
+int should_go_on;
 
-int wait_client(char *names[], int number_of_names){
-  	int addrlen = sizeof(address);
-	if(pthread_mutex_init(&lock, NULL) != 0){
-		printf("\n mutex init failed\n");
-    	return 1;
-    }	
+int fd;	
 
-	while(1){	
-		for(int i = 0; i < MAX_CLIENTS; i++){
-			recvfrom(sockfd, &recividos[i], sizeof(recividos[i]), 0,(struct sockaddr *)&address,&addrlen);
-			int *number = malloc(sizeof(*number));
-			*number = i;
-			addresses[i]= address;
-			switch (recividos[i].action){
-				case READER:
-					if(pthread_create(&threads[i], NULL, thread_server_reader,(void *)number)!=0){
-						perror("	thread error");
-						exit(EXIT_FAILURE);
-					}	
-				break;
-				
-				case WRITER:
-					printf("Esctirotr\n");
-					if(pthread_create(&threads[i], NULL, thread_server_writer,(void *)number)!=0){
-						perror("	thread error");
-						exit(EXIT_FAILURE);
-					}	
-				break;
 
-				default:
 
-				break;
-			}
-			if(pthread_join(threads[i], NULL)!=0){
-				perror("	thread error");
-				exit(EXIT_FAILURE);
-			}
-		}
+/* Gestion de interrupciones: cerramos socket antes de salir */
+void sig_handler(int signo) {
+  if (signo == SIGINT) {
+    printf("\nTerminando programa...\n");
+    close (fd);
+    should_go_on = 0;
+    for (int i = 0; i < threadno; i++) {
+      pthread_join(threads[i], NULL);
+    }
+    printf("\nTodos los thread han terminado.\n");            
+  }
+}
 
-		
-		//I use n to know how many times the bucle have been executed
-		n++;
-		printf("------------------%d------------------\n",n);
+/* Genera un entero aleatorio en el rango indicado */
+int get_random(int lower, int upper) { 
+  int num = (rand() % (upper - lower + 1)) + lower; 
+  return num;
+} 
+
+
+int init_socket (int* port_to_make,struct sockaddr_in clientaddr_to_set ) {
+	int port = *(int*)port_to_make;
+
+	int local_sd;
+	if ((local_sd  = socket(AF_INET, SOCK_DGRAM, 0)) == -1){
+    	perror("socket failed");
+    	exit(EXIT_FAILURE);
+  	}else{
+		printf("Socket created \n");
 	}
 
-  	return 0;   
+	bzero(&clientaddr_to_set, sizeof(clientaddr_to_set));
+	clientaddr_to_set.sin_family = AF_INET;
+    clientaddr_to_set.sin_port = htons( port );
+	clientaddr_to_set.sin_addr.s_addr = inet_addr(gip);
+
+	if (bind(local_sd, (struct sockaddr *)&clientaddr_to_set, sizeof(clientaddr_to_set))<0){
+        perror("bind failed");
+        exit(EXIT_FAILURE);
+    }else{
+	 	printf("Conection created\n");
+	}
+		
+	return local_sd;
+}
+
+
+ /* Hilo trabajador  */
+void* worker_thread (void* r) {
+	int recdata;
+	int local_sd;
+	int server_port;
+
+	// Casting para leer datos del hilo
+	struct thread_data rq = *( (struct thread_data*) r); 
+	printf("\n Atendiendo a client [%s]  en %s : %d " , rq.username, inet_ntoa(rq.clientaddr.sin_addr), ntohs (rq.clientaddr.sin_port));
+	printf("\n Por el hilo servidor num %u \n", rq.thread_num);
+	// Creamos un nuevo socket
+	server_port = get_random(3000, 10000);
+	struct sockaddr_in clientaddr; 
+	socklen_t addrlen = sizeof(clientaddr);
+	local_sd = init_socket(&server_port, clientaddr);
+	printf("El numero es %d \n", server_port);
+	// Se lo decimos al cliente
+	struct message ack;
+	ack.port= server_port;
+	ack.action= CHUNKACK;
+	sendto(rq.init_sd, &ack, sizeof(ack), 0, (struct sockaddr*) &rq.clientaddr, rq.addlen);
+	printf("\n Tras el cambio atiendo a client [%s]  en %s : %d " , rq.username, inet_ntoa(clientaddr.sin_addr), ntohs (rq.clientaddr.sin_port));
+
+	char filename[MAX_USERNAME_SIZE+4];
+	sprintf(filename,"%s.txt",rq.username);
+	//Para que no sealicen lecturas ye scrituras a la vez se puede poner un lock a lo mejor? me parece extremo
+	int fdin = open_file(filename);
+	//Y en el while voy tramitando los mensajes, cada bucle es un mensaje tramitado
+
+	// Lazo principal
+	struct get_chunk chunk_to_get;
+	while (should_go_on==1){
+		// Limpiamos el bufer de datos
+		//memset (local_buf, 0, sizeof (local_buf)); 
+		
+		recdata = recvfrom (local_sd, &chunk_to_get, sizeof(chunk_to_get), 0, (struct sockaddr*)  &clientaddr,  &addrlen);
+		printf("Recivido un getchunk \n");
+		if (recdata <= 0 )
+		continue;
+
+		struct send_chunk chunk_to_send;
+		chunk_to_send.action= SENDCHUNK;
+		chunk_to_send.chunk_id= chunk_to_get.chunk_id;
+		chunk_to_send.data_size=100;
+		strcpy(chunk_to_send.username, chunk_to_get.username);
+		memset(chunk_to_send.data, 0, 512);
+		int read_status = read(fdin, chunk_to_send.data, MAX_SIZE);
+		if(read_status < 0){
+			fprintf(stderr, "can't read");
+			exit(1);
+		}
+		printf("\n He recibido: [%s](%d) desde %s : %d en el hilo %u" ,chunk_to_get.username , recdata, inet_ntoa (rq.clientaddr.sin_addr), ntohs (rq.clientaddr.sin_port), rq.thread_num );         
+		//strrev(local_buf);
+		sendto (local_sd, &chunk_to_send, sizeof(chunk_to_send), 0, (struct sockaddr*) &rq.clientaddr, rq.addlen);
+	}
+	printf("Cerramos hilo (%d) ...\n", rq.thread_num);
+	close (local_sd);
+	return NULL;
+}
+
+
+int wait_client(char *names[], int number_of_names){
+
+	int recdata;
+	// direccion del cliente
+	struct sockaddr_in clientaddr; 
+	socklen_t addrlen = sizeof(clientaddr);
+	// Buffer de datos UDP, lo uso para ver si el cliente esta registrado y sies lector o escritor
+	struct message first_message;
+
+	int port;
+	// TODO: pasar como parametros
+	port = 8128;
+	fd = init_socket(&port, clientaddr);
+
+	// gestion de interrupciones
+	signal(SIGINT, sig_handler);
+	signal(SIGTSTP, sig_handler);
+	// unbuffer stdout: para ver las salidas de los hilos 
+	setvbuf(stdout, NULL, _IONBF, 0); 
+	should_go_on = 1;
+	printf("\n\t Servidor escuchando en el puerto %u \n",port );
+		
+	// Lazo principal de ejecucion
+	while (should_go_on==1){   
+		// limpiamos buffer de datos, pniendo a -1 la action ya que es un estao en el que no puede estar.
+		memset (first_message.username, 0, MAX_USERNAME_SIZE);
+		first_message.action=-1;
+		// Aqui esperamos nuevos clientes
+
+		recdata = recvfrom (fd, &first_message, sizeof(first_message), 0, (struct sockaddr*) &clientaddr, &addrlen);
+		if (recdata <= 0 )
+		continue;
+
+
+
+
+		// una vez recibida una peticion, preparamos los datos del hilo que lo atendera
+		struct thread_data *r = malloc( sizeof( struct thread_data ) );  
+		bzero (r, sizeof (struct thread_data));  
+		r->thread_num = threadno;
+		r->addlen = addrlen;
+		r->clientaddr = clientaddr;
+		r->init_sd = fd;
+		strcpy (r->username, first_message.username);
+		// Y creamos el hilo para atenderlo, que trabajara en otro hilo
+		pthread_create (&threads [threadno++], NULL, worker_thread, (void*)r);
+		if (threadno == MAX_THREADS){
+		threadno = 0;
+		printf("\n Demasiados hilos creados? ... \n");
+		}
+				
+	}
+	return 0;
 }
 
 int is_registred(char username[],char *strs[], int size){

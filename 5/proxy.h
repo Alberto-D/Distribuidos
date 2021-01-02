@@ -6,8 +6,26 @@
 #include <string.h>
 #include <netinet/in.h>
 #include <pthread.h>
+
+#include <netdb.h>
+#include <signal.h>
+#include <arpa/inet.h>
+#include <time.h>
+
+#define MAX_THREADS 128
+#define MAX_USERNAME_SIZE 50
 #define MAX_SIZE 512
-#define MAX_USERNAME_SIZE 512
+
+#define PORT 8128
+#define MAX_CLIENTS 128
+
+
+
+
+
+pthread_t threads [MAX_THREADS];
+int fd;
+int should_go_on;
 
 
 enum actions {
@@ -73,12 +91,37 @@ struct chunk_ack{
 
 
 //////
+
+
+
+
+struct thread_data {
+    int thread_num;
+    int init_sd;
+    char username[MAX_USERNAME_SIZE];
+    socklen_t addlen;
+    struct sockaddr_in clientaddr;
+};
+
 struct message{
    enum actions action;
    char username[MAX_USERNAME_SIZE];
+   int port;
 };
 
 
+
+
+
+int get_random(int lower, int upper);
+
+// Gestion de interrupcions: cerramos sockets y esperamos hilos antes de salir 
+void sig_handler(int signo);
+ 
+// Hilo trabajador
+void* worker_thread(void* r);
+
+int main(int argc, char const *argv[]);
 
 
 void check_arguments_reader(int argc, char const *argv[]);
@@ -133,3 +176,4 @@ void set_username (const char username[]);
 // Espera a un nuevo cliente
    int wait_client(char *names[], int number_of_names);
 // Confirma la recepción de un chunk
+

@@ -12,7 +12,7 @@
 #include <errno.h>
 #include <err.h>
 
-#define PORT 8080
+#define PORT 8128
 #define MAXI 256
 #define MAX_SIZE 512
 
