@@ -11,6 +11,7 @@
 #include <signal.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <unistd.h>
 
 #define MAX_THREADS 128
 #define MAX_USERNAME_SIZE 50
@@ -110,70 +111,93 @@ struct message{
 };
 
 
+struct sync_elements{
+   int syncronize ;
+   int wait_decision ;
+   int number_of_threads;
+   int threads_read;
+   int subordinated_threads;
+   struct can_commit commit;
+   struct decision decisions[MAX_CLIENTS];
+};
 
 
+// Indica la forma decuda de usar el programa y sale.
+void usage(void);
 
-int get_random(int lower, int upper);
-
-// Gestion de interrupcions: cerramos sockets y esperamos hilos antes de salir 
-void sig_handler(int signo);
- 
-// Hilo trabajador
-void* worker_thread(void* r);
-
-int main(int argc, char const *argv[]);
-
-
+int get_client_id(char client_name[]);
+// Comprueban los arumentos del lector y el escritor.
 void check_arguments_reader(int argc, char const *argv[]);
 void check_arguments_writer(int argc, char const *argv[]);
 
-
-int start_conection(struct message first);
-
-
-void *thread_server_writer(void *oldi);
-void *thread_reception_reader(void *unused);
-
-int send_chunk(int id, char textc[],enum actions action);
-int wait_ack(struct sockaddr_in address);
-int send_ack(struct sockaddr_in address,int chunk_id,char name[]);
-
-
-void usage(void);
-
-
-int ask_for_chunk(char recived[], int chunck_id);
-
-
-int is_registred(char username[],char *strs[], int size);
-// ** FUNCIONES COMUNES
 // Establecer el username del client (para los logs y trazas).
 void set_username (const char username[]);
 
-// Establecer ip y puerto
-// Si se trata del cliente, se define ip y puerto donde conectar con el servidor.
-// Si se trata del servidor, se define ip y puerto donde se pone a escuchar.
-   void set_ip_port (char* ip, unsigned int port); 
+// Pone la ip y el puerto indicados por parametros.
+void set_ip_port (char* ip, unsigned int port); 
+
+// Comienza la conexion del cliente
+int init_connection_client();
+
 // Toma el nombre de un archivo y devuelve un ID de archivo o -1 si falla.
-   int open_file(char * strFileName);
-// Cierra el fichero cuando termina de enviarlo o escribir en él
-   int close_file(int fd);
-// cierra la conexión
-// Asegurate de cerrar los sockets y descriptores de comunicacion.
-   int close_connection();
+int open_file(char * strFileName);
 
-// ** FUNCIONES DE CLIENTE
-// Inicializa la conexión en modo cliente
-    int init_connection_client();
-// Inicializa un thread que está constantemente escuchando en el socket.
-   void init_recv_thread (void);
-// Escribe datos en el socket y devuelve bytes escritos.
-   int write_block(int fd, char * strData, int byteOffset, int blockSize);
+// Manda un primer mensaje con si es escritor o lector para empezar la comunicacacion y espera un ack.
+// Si llega un CHUNKACK la conexcion está bien y se puede seguir, si no, devuelvo error.
+int start_conection(struct message first);
 
-// ** FUNCIONES DE SERVIDOR (P2)
-// Inicializa la conexión en modo servidor
-   int init_connection_server();
-// Espera a un nuevo cliente
-   int wait_client(char *names[], int number_of_names);
-// Confirma la recepción de un chunk
+// Manda por la direccion del cliente (designada en init_conection_client) un chunk con las caracteristicas de los parametros.
+int send_chunk(int id, char textc[],enum actions action);
 
+// Envia un mensaje de sincronizacion al servidor para que sepa que ya ha terminadode enviar chunks y puede escribir en el fichero final.
+int send_sync(int id, char textc[],enum actions action);
+
+
+
+//Envia un mensaje preguntando por el chunk id al servidor, en texctc se guarda el texto de ese chunk.
+int ask_for_chunk(char textc[],int id);
+
+//Cierra la conexion.
+void close_connection();
+
+
+//Espera un mensaje ack en la direccion address.
+int wait_ack(struct sockaddr_in address);
+
+
+// Gestion de interrupcions: cerramos sockets y esperamos hilos antes de salir 
+void sig_handler(int signo);
+
+// Genera un entero aleatorio en el rango indicado 
+int get_random(int lower, int upper);
+
+// Devuelve un socket con el puerto y la direccion indicados.
+int init_socket (int* port_to_make,struct sockaddr_in clientaddr_to_set );
+
+
+// Hilo que controla el funcionamiento del server con un cliente lector.
+void* worker_thread_reader (void* r);
+
+
+// Limpia el array poniendo los parametros de todos los elementos a -1, numero que no puedentener de forma natural.
+void clean_decisions(struct decision decisions[]);
+
+// Funcion que se activa cuando un hilo tiene que sincronizar.
+// Lo combierte en el hilo maestro y maneja la sincronizacion de todos los hilos.
+int sync_function(int thread_number, int list_to_check[],int number_of_chunks,int user_id);
+
+// Funcion que se ejecuta en los hilos subordinados cuando e activa la sincronizacion.
+int sync_activated(int all_thread_number, int list_to_check[],int number_of_chunks, int user_id);
+
+// Escribe los datos en el archivo final y borra el temporal.
+// Dependiendo del parametro sync se escribe o no.
+void write_final(int sync,char filename[], char username[], int chunk_list[], int chunk_number);
+
+// Hilo que controla el funcionamiento del server con un cliente escritor.
+void* worker_thread_writer (void* r);
+
+// Funcion principal queespera la llegada de mnsajes y los pasa a los hilos.
+int wait_client(char *names[], int number_of_names);
+
+// Funcion que comprueba si el usuario está registrado.
+int is_registred(char username[],char *strs[], int size);

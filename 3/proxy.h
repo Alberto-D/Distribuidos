@@ -31,13 +31,13 @@ struct name{
 
 void usage(void);
 
-void check_arguments_client(int argc, char const *argv[], char* mode, int* threads);
+void check_arguments_client(int argc,  const char *argv[], char* mode, int* threads);
 void *thread_client(void *i);
 void launch_cient(int thread_number);
 
 void *thread_server(void *sockiet);
 void launch_server(int eso);
-void check_arguments_server(int argc, char const *argv[], int* priority);
+void check_arguments_server(int argc,  const char *argv[], int* priority);
 
 void *thread_master(void *arg);
 

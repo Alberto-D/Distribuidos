@@ -17,17 +17,11 @@ int main(int argc, char const *argv[])
 {
 	int priority;
 	//Configuro lo necesario para usar sockets, si algo falla aviso.
-	char *names[10] = {"yo", "mfernandez", "rcalvo","abanderas","pcruz"};
+	char *names[10] = {"jgines", "mfernandez", "rcalvo","abanderas","pcruz"};
 	set_ip_port("127.0.0.1",8128);
-	//init_connection_server();
-
+	//Espero a los clientes.
 	wait_client(names, 5);
 
-	// int eso =is_registred("jginess",strs, 5);
-	// if (eso==0){
-	// 	printf("aaaaaaaaaaaaaaaaa\n");
-
-	// }
     return 0;
 }
 

@@ -29,18 +29,16 @@ int main(int argc, char const *argv[]){
 	init_connection_client();
 	first_message.action=READER;
 	strcpy(first_message.username,argv[2]);
-	//printf("Cilente #%s - Se leen %d chunks.\n",argv[2],num_chunks);
 	int port;
 	if ((port= start_conection(first_message))<0){
 		fprintf(stderr, "Cliente #%s - Error en la primera lectura.\n",argv[2]);
 		exit(1);
 	}
-	//printf("Cilente #%s - Se leen %d chunks.\n",argv[2],num_chunks);
 
-	// close_connection();
-	// printf("Cilente #%s puerto %d \n",argv[2], port);
-	// set_ip_port("127.0.0.1",port);
-	// init_connection_client();
+	close_connection();
+	printf("Cilente #%s puerto %d \n",argv[2], port);
+	set_ip_port("127.0.0.1",port);
+	init_connection_client();
 
 	while (num_chunks >counter){
 		memset(recived,0,MAX_SIZE);
@@ -49,18 +47,17 @@ int main(int argc, char const *argv[]){
 			exit(1);
 		}
 		counter++;
-
 		//Podría imprimir poco a poco el texto, pero segun he entendido el enunciado hay que guardarlo e imprimirlo al final asi que eso hago.
 		strncat(text, recived, MAX_SIZE);
-		
+	
 	}
-	// //Como ya ha acabado la comunicacion envio un mensaje con id -1 para indicar que el servidor puede dejar de escuchar.
-	// if(ask_for_chunk(recived, -1)!=0){
-	// 	fprintf(stderr,"Cliente #%s - Error en la ultima lectura.\n",argv[2]);
-	// 	exit(1);
-	// }
-	// printf(" %s \n",text);
+	 //Como ya ha acabado la comunicacion envio un mensaje con id -1 para indicar que el servidor puede dejar de escuchar.
+	if(ask_for_chunk(recived, -1)!=0){
+		fprintf(stderr,"Cliente #%s - Error en la ultima lectura.\n",argv[2]);
+		exit(1);
+	}
+	printf("El texto es : %s \n",text);
 
-	// close_connection();
+	close_connection();
 	return 0;
 }
